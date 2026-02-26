@@ -1,38 +1,41 @@
+using Microsoft.EntityFrameworkCore;
+using TodoApi.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Registra Controllers (para a API responder a rotas do tipo /api/...)
+// Controllers
 builder.Services.AddControllers();
 
-// Swagger é opcional, mas ajuda muito a testar a API
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// CORS: libera o front (Vue) acessar a API
-// Sem isso, o navegador bloqueia as requisições (segurança do browser).
+// ✅ EF Core + PostgreSQL
+builder.Services.AddDbContext<AppDbContext>(options =>
+{
+    // Pega a connection string do appsettings.json
+    var cs = builder.Configuration.GetConnectionString("Default");
+    options.UseNpgsql(cs);
+});
+
+// ✅ CORS (para o Vue conseguir acessar a API)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowVue",
-        policy => policy
-            // libera o endereço do Vite (Vue rodando)
-            .WithOrigins("http://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-    );
+    options.AddPolicy("AllowVue", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();
 
-// Em modo desenvolvimento, habilita o Swagger
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
-// Usa a política CORS que criamos
 app.UseCors("AllowVue");
 
-// Mapeia os controllers (sem isso as rotas não funcionam)
 app.MapControllers();
 
 app.Run();

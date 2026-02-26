@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using TodoApi.Data;
 using TodoApi.Models;
 
 namespace TodoApi.Controllers;
@@ -7,64 +9,77 @@ namespace TodoApi.Controllers;
 [Route("api/todo")]
 public class TodoController : ControllerBase
 {
-    // Lista em memória (some ao reiniciar a API)
-    private static readonly List<TodoItem> Tasks = new();
+    private readonly AppDbContext _db;
 
-    // GET /api/todo  -> listar tudo
-    [HttpGet]
-    public ActionResult<List<TodoItem>> GetAll()
+    // Injeção de dependência: o ASP.NET cria o AppDbContext pra gente.
+    public TodoController(AppDbContext db)
     {
-        return Ok(Tasks);
+        _db = db;
     }
 
-    // POST /api/todo -> criar
+    // GET /api/todo -> lista todas as tarefas
+    [HttpGet]
+    public async Task<ActionResult<List<TodoItem>>> GetAll()
+    {
+        // AsNoTracking = mais rápido quando você só vai ler
+        var tasks = await _db.Tasks.AsNoTracking().OrderByDescending(t => t.Id).ToListAsync();
+        return Ok(tasks);
+    }
+
+    // POST /api/todo -> cria tarefa
     [HttpPost]
-    public ActionResult<TodoItem> Create([FromBody] TodoItem newTask)
+    public async Task<ActionResult<TodoItem>> Create([FromBody] TodoItem newTask)
     {
         if (string.IsNullOrWhiteSpace(newTask.Title))
             return BadRequest("Title não pode ser vazio.");
 
-        var nextId = Tasks.Count == 0 ? 1 : Tasks.Max(t => t.Id) + 1;
-        newTask.Id = nextId;
+        newTask.Done = false;
 
-        Tasks.Add(newTask);
+        _db.Tasks.Add(newTask);            // adiciona no "contexto"
+        await _db.SaveChangesAsync();      // salva no banco de verdade
 
         return Created($"/api/todo/{newTask.Id}", newTask);
     }
 
     // PUT /api/todo/{id} -> alterna Done
     [HttpPut("{id}")]
-    public ActionResult<TodoItem> ToggleDone(int id)
+    public async Task<ActionResult<TodoItem>> ToggleDone(int id)
     {
-        var task = Tasks.FirstOrDefault(t => t.Id == id);
+        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
         if (task == null) return NotFound();
 
-        task.Done = !task.Done;
+        task.Done = !task.Done;            // altera em memória
+        await _db.SaveChangesAsync();      // persiste no banco
+
         return Ok(task);
     }
 
     // PUT /api/todo/{id}/title -> edita o título
     [HttpPut("{id}/title")]
-    public ActionResult<TodoItem> UpdateTitle(int id, [FromBody] TodoItem updated)
+    public async Task<ActionResult<TodoItem>> UpdateTitle(int id, [FromBody] TodoItem updated)
     {
-        var task = Tasks.FirstOrDefault(t => t.Id == id);
+        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
         if (task == null) return NotFound();
 
         if (string.IsNullOrWhiteSpace(updated.Title))
             return BadRequest("Title não pode ser vazio.");
 
         task.Title = updated.Title;
+        await _db.SaveChangesAsync();
+
         return Ok(task);
     }
 
-    // DELETE /api/todo/{id} -> apagar
+    // DELETE /api/todo/{id} -> remove tarefa
     [HttpDelete("{id}")]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id)
     {
-        var task = Tasks.FirstOrDefault(t => t.Id == id);
+        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
         if (task == null) return NotFound();
 
-        Tasks.Remove(task);
+        _db.Tasks.Remove(task);
+        await _db.SaveChangesAsync();
+
         return NoContent();
     }
 }
